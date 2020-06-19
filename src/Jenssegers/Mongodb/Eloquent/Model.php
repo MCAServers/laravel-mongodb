@@ -17,7 +17,7 @@ use MongoDB\BSON\UTCDateTime;
 
 abstract class Model extends BaseModel
 {
-    use HybridRelations;
+    use HybridRelations, EmbedsRelations;
 
     /**
      * The collection associated with the model.
