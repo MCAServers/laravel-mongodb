@@ -15,7 +15,12 @@ use MongoDB\BSON\Binary;
 use MongoDB\BSON\ObjectID;
 use MongoDB\BSON\Regex;
 use MongoDB\BSON\UTCDateTime;
+use RuntimeException;
 
+/**
+ * Class Builder
+ * @package Jenssegers\Mongodb\Query
+ */
 class Builder extends BaseBuilder
 {
     /**
@@ -116,13 +121,35 @@ class Builder extends BaseBuilder
     ];
 
     /**
-     * {@inheritdoc}
+     * Check if we need to return Collections instead of plain arrays (laravel >= 5.3 )
+     * @var boolean
+     */
+    protected $useCollections;
+
+    /**
+     * @inheritdoc
      */
     public function __construct(Connection $connection, Processor $processor)
     {
         $this->grammar = new Grammar;
         $this->connection = $connection;
         $this->processor = $processor;
+        $this->useCollections = $this->shouldUseCollections();
+    }
+
+    /**
+     * Returns true if Laravel or Lumen >= 5.3
+     * @return bool
+     */
+    protected function shouldUseCollections()
+    {
+        if (function_exists('app')) {
+            $version = app()->version();
+            $version = filter_var(explode(')', $version)[0], FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION); // lumen
+            return version_compare($version, '5.3', '>=');
+        }
+
+        return true;
     }
 
     /**
@@ -162,7 +189,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function find($id, $columns = [])
     {
@@ -170,7 +197,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function value($column)
     {
@@ -180,7 +207,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function get($columns = [])
     {
@@ -188,11 +215,24 @@ class Builder extends BaseBuilder
     }
 
     /**
+     * @inheritdoc
+     */
+    public function cursor($columns = [])
+    {
+        $result =  $this->getFresh($columns, true);
+        if ($result instanceof LazyCollection) {
+            return $result;
+        }
+        throw new RuntimeException("Query not compatible with cursor");
+    }
+
+    /**
      * Execute the query as a fresh "select" statement.
      * @param array $columns
-     * @return array|static[]|Collection
+     * @param bool $returnLazy
+     * @return array|static[]|Collection|LazyCollection
      */
-    public function getFresh($columns = [])
+    public function getFresh($columns = [], $returnLazy = false)
     {
         // If no columns have been specified for the select statement, we will set them
         // here to either the passed columns, or the standard default of retrieving
@@ -217,18 +257,18 @@ class Builder extends BaseBuilder
             // Add grouping columns to the $group part of the aggregation pipeline.
             if ($this->groups) {
                 foreach ($this->groups as $column) {
-                    $group['_id'][$column] = '$'.$column;
+                    $group['_id'][$column] = '$' . $column;
 
                     // When grouping, also add the $last operator to each grouped field,
                     // this mimics MySQL's behaviour a bit.
-                    $group[$column] = ['$last' => '$'.$column];
+                    $group[$column] = ['$last' => '$' . $column];
                 }
 
                 // Do the same for other columns that are selected.
                 foreach ($this->columns as $column) {
                     $key = str_replace('.', '_', $column);
 
-                    $group[$key] = ['$last' => '$'.$column];
+                    $group[$key] = ['$last' => '$' . $column];
                 }
             }
 
@@ -260,16 +300,15 @@ class Builder extends BaseBuilder
                         $results = [
                             [
                                 '_id'       => null,
-                                'aggregate' => $totalResults,
-                            ],
+                                'aggregate' => $totalResults
+                            ]
                         ];
-
-                        return new Collection($results);
+                        return $this->useCollections ? new Collection($results) : $results;
                     } elseif ($function == 'count') {
                         // Translate count into sum.
                         $group['aggregate'] = ['$sum' => 1];
                     } else {
-                        $group['aggregate'] = ['$'.$function => '$'.$column];
+                        $group['aggregate'] = ['$' . $function => '$' . $column];
                     }
                 }
             }
@@ -287,7 +326,7 @@ class Builder extends BaseBuilder
 
             // apply unwinds for subdocument array aggregation
             foreach ($unwinds as $unwind) {
-                $pipeline[] = ['$unwind' => '$'.$unwind];
+                $pipeline[] = ['$unwind' => '$' . $unwind];
             }
 
             if ($group) {
@@ -317,24 +356,31 @@ class Builder extends BaseBuilder
                 $options = array_merge($options, $this->options);
             }
 
+            // if transaction in session
+            if ($session = $this->connection->getSession()) {
+                $options['session']  =  $session;
+            }
+
             // Execute aggregation
             $results = iterator_to_array($this->collection->aggregate($pipeline, $options));
 
             // Return results
-            return new Collection($results);
+            return $this->useCollections ? new Collection($results) : $results;
         } // Distinct query
         elseif ($this->distinct) {
             // Return distinct results directly
             $column = isset($this->columns[0]) ? $this->columns[0] : '_id';
 
-            // Execute distinct
-            if ($wheres) {
-                $result = $this->collection->distinct($column, $wheres);
-            } else {
-                $result = $this->collection->distinct($column);
+            $options = [];
+            // if transaction in session
+            if ($session = $this->connection->getSession()) {
+                $options['session']  =  $session;
             }
 
-            return new Collection($result);
+            // Execute distinct
+            $result = $this->collection->distinct($column, $wheres ?: [], $options);
+
+            return $this->useCollections ? new Collection($result) : $result;
         } // Normal query
         else {
             $columns = [];
@@ -378,13 +424,25 @@ class Builder extends BaseBuilder
                 $options = array_merge($options, $this->options);
             }
 
+            // if transaction in session
+            if ($session = $this->connection->getSession()) {
+                $options['session']  =  $session;
+            }
+
             // Execute query and get MongoCursor
             $cursor = $this->collection->find($wheres, $options);
 
+            if ($returnLazy) {
+                return LazyCollection::make(function () use ($cursor) {
+                    foreach ($cursor as $item) {
+                        yield $item;
+                    }
+                });
+            }
+
             // Return results as an array with numeric keys
             $results = iterator_to_array($cursor, false);
-
-            return new Collection($results);
+            return $this->useCollections ? new Collection($results) : $results;
         }
     }
 
@@ -410,7 +468,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function aggregate($function, $columns = [])
     {
@@ -442,7 +500,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function exists()
     {
@@ -450,7 +508,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function distinct($column = false)
     {
@@ -464,7 +522,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function orderBy($column, $direction = 'asc')
     {
@@ -499,7 +557,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function whereBetween($column, array $values, $boolean = 'and', $not = false)
     {
@@ -511,7 +569,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function forPage($page, $perPage = 15)
     {
@@ -521,7 +579,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function insert(array $values)
     {
@@ -532,28 +590,37 @@ class Builder extends BaseBuilder
         foreach ($values as $value) {
             // As soon as we find a value that is not an array we assume the user is
             // inserting a single document.
-            if (! is_array($value)) {
+            if (!is_array($value)) {
                 $batch = false;
                 break;
             }
         }
 
-        if (! $batch) {
+        if (!$batch) {
             $values = [$values];
         }
 
-        // Batch insert
-        $result = $this->collection->insertMany($values);
+        $options = [];
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
+        }
+        $result = $this->collection->insertMany($values, $options);
 
-        return 1 == (int) $result->isAcknowledged();
+        return (1 == (int) $result->isAcknowledged());
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function insertGetId(array $values, $sequence = null)
     {
-        $result = $this->collection->insertOne($values);
+        $options = [];
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
+        }
+        $result = $this->collection->insertOne($values, $options);
 
         if (1 == (int) $result->isAcknowledged()) {
             if ($sequence === null) {
@@ -573,6 +640,11 @@ class Builder extends BaseBuilder
         // Use $set as default operator.
         if (! Str::startsWith(key($values), '$')) {
             $values = ['$set' => $values];
+        }
+
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
         }
 
         return $this->performUpdate($values, $options);
@@ -596,6 +668,11 @@ class Builder extends BaseBuilder
             $query->orWhereNotNull($column);
         });
 
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
+        }
+
         return $this->performUpdate($query, $options);
     }
 
@@ -616,7 +693,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function forPageAfterId($perPage = 15, $lastId = 0, $column = '_id')
     {
@@ -624,7 +701,7 @@ class Builder extends BaseBuilder
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function pluck($column, $key = null)
     {
@@ -634,7 +711,6 @@ class Builder extends BaseBuilder
         if ($key == '_id') {
             $results = $results->map(function ($item) {
                 $item['_id'] = (string) $item['_id'];
-
                 return $item;
             });
         }
@@ -657,7 +733,14 @@ class Builder extends BaseBuilder
         }
 
         $wheres = $this->compileWheres();
-        $result = $this->collection->DeleteMany($wheres);
+
+        $options = [];
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
+        }
+
+        $result = $this->collection->DeleteMany($wheres, $options);
         if (1 == (int) $result->isAcknowledged()) {
             return $result->getDeletedCount();
         }
@@ -685,6 +768,10 @@ class Builder extends BaseBuilder
         $options = [
             'typeMap' => ['root' => 'object', 'document' => 'object'],
         ];
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
+        }
 
         $result = $this->collection->drop($options);
 
@@ -812,6 +899,11 @@ class Builder extends BaseBuilder
         // Update multiple items by default.
         if (! array_key_exists('multiple', $options)) {
             $options['multiple'] = true;
+        }
+
+        // if transaction in session
+        if ($session = $this->connection->getSession()) {
+            $options['session']  =  $session;
         }
 
         $wheres = $this->compileWheres();
