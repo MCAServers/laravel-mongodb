@@ -28,7 +28,7 @@ class EmbedsMany extends EmbedsOneOrMany
      */
     public function getResults()
     {
-        return $this->toCollection($this->getEmbedded());
+        return $this->toCollection($this->getEmbedded(true));
     }
 
     /**
@@ -277,7 +277,7 @@ class EmbedsMany extends EmbedsOneOrMany
         $page = $page ?: Paginator::resolveCurrentPage($pageName);
         $perPage = $perPage ?: $this->related->getPerPage();
 
-        $results = $this->getEmbedded();
+        $results = $this->getEmbedded(true);
         $results = $this->toCollection($results);
         $total = $results->count();
         $start = ($page - 1) * $perPage;
@@ -301,9 +301,9 @@ class EmbedsMany extends EmbedsOneOrMany
     /**
      * @inheritdoc
      */
-    protected function getEmbedded()
+    protected function getEmbedded($build = false)
     {
-        return parent::getEmbedded() ?: [];
+        return parent::getEmbedded($build) ?: [];
     }
 
     /**
