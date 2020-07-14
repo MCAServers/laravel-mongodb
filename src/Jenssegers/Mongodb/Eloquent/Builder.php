@@ -12,6 +12,11 @@ class Builder extends EloquentBuilder
     use QueriesRelationships;
 
     /**
+     * @var array
+     */
+    protected $loadedMacros = [];
+
+    /**
      * The methods that should be returned from query builder.
      * @var array
      */
@@ -205,5 +210,29 @@ class Builder extends EloquentBuilder
     public function getConnection()
     {
         return $this->query->getConnection();
+    }
+
+    /**
+     * @return array
+     */
+    public function getLoadedMacros()
+    {
+        return $this->loadedMacros;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function __call($method, $parameters)
+    {
+        if($this->hasMacro($method)) {
+            $this->loadedMacros[$method] = true;
+        }
+
+        if (static::hasGlobalMacro($method)) {
+            $this->loadedMacros[$method] = true;
+        }
+
+        return parent::__call($method, $parameters);
     }
 }
