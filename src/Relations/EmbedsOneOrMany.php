@@ -203,6 +203,17 @@ abstract class EmbedsOneOrMany extends Relation
         // Get embedded models form parent attributes.
         $embedded = isset($attributes[$this->localKey]) ? (array) $attributes[$this->localKey] : null;
 
+        if($this->related) {
+            if($this->related->embed) {
+                if(!empty($embedded)) {
+                    $related_uses = class_uses($this->related);
+                    if(isset($related_uses["Jenssegers\Mongodb\Eloquent\SoftDeletes"])) {
+                        $embedded = collect($embedded)->whereNull('deleted_at')->toArray();
+                    }
+                }
+            }
+        }
+
         return $embedded;
     }
 
