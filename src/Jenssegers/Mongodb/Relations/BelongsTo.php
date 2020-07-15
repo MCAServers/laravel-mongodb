@@ -91,7 +91,11 @@ class BelongsTo extends \Illuminate\Database\Eloquent\Relations\BelongsTo
         $dictionary = [];
 
         foreach ($results as $result) {
-            $dictionary[$result->getAttribute($owner)] = $result;
+            $owner_attribute = $result->getAttribute($owner);
+            if($owner_attribute instanceof ObjectId || $owner_attribute instanceof Binary)
+                $owner_attribute = (string) $owner_attribute;
+
+            $dictionary[$owner_attribute] = $result;
         }
 
         // Once we have the dictionary constructed, we can loop through all the parents
