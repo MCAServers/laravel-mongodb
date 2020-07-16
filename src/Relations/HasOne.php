@@ -103,6 +103,25 @@ class HasOne extends EloquentHasOne
     }
 
     /**
+     * Build model dictionary keyed by the relation's foreign key.
+     *
+     * @param  \Illuminate\Database\Eloquent\Collection  $results
+     * @return array
+     */
+    protected function buildDictionary(Collection $results)
+    {
+        $foreign = $this->getForeignKeyName();
+
+        return $results->mapToDictionary(function ($result) use ($foreign) {
+            $foreign_result = $result->{$foreign};
+            if($foreign_result instanceof ObjectId || $foreign_result instanceof Binary)
+                $foreign_result = (string) $foreign_result;
+
+            return [$foreign_result => $result];
+        })->all();
+    }
+
+    /**
      * @param array $models
      * @param Collection $results
      * @param $relation
