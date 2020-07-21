@@ -51,11 +51,21 @@ class Builder extends EloquentBuilder
         return $this->toBase()->update($values);
     }
 
+
+    public function is_multi_array( $arr ) {
+        rsort( $arr );
+        return isset( $arr[0] ) && is_array( $arr[0] );
+    }
+
     /**
      * {@inheritdoc}
      */
-    public function insert(array $values)
+    public function insert(array $values, $enable = false)
     {
+
+        if(!$enable)
+            throw new \Exception('query()->insert() is disabled');
+
         // Intercept operations on embedded models and delegate logic
         // to the parent relation instance.
         if ($relation = $this->model->getParentRelation()) {
