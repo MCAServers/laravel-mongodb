@@ -54,8 +54,12 @@ class Builder extends EloquentBuilder
     /**
      * {@inheritdoc}
      */
-    public function insert(array $values)
+    public function insert(array $values, $enable = false)
     {
+
+        if(!$enable)
+            throw new \Exception('query()->insert() is disabled');
+
         // Intercept operations on embedded models and delegate logic
         // to the parent relation instance.
         if ($relation = $this->model->getParentRelation()) {
