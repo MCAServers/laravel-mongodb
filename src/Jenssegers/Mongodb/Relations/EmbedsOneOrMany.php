@@ -58,6 +58,14 @@ abstract class EmbedsOneOrMany extends Relation
     /**
      * @inheritdoc
      */
+    public function getRelationName()
+    {
+        return $this->relation;
+    }
+
+    /**
+     * @inheritdoc
+     */
     public function addConstraints()
     {
         if (static::$constraints) {
