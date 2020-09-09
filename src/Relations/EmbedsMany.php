@@ -340,4 +340,25 @@ class EmbedsMany extends EmbedsOneOrMany
     {
         return 'whereIn';
     }
+
+    /**
+     * Gets the embedded children in their full models
+     *
+     * @inheritdoc
+     */
+    public function toParents()
+    {
+        $parent_model      = $this->parent;
+        $relationship      = $this->relation;
+        $embedded_children = $parent_model->{$relationship};
+        $first_child       = $embedded_children->first();
+
+        if($first_child && $first_child->parentModel()) {
+            $related_parent_class = get_class($first_child->parentModel()->related);
+
+            return $related_parent_class::whereIn('_id', $embedded_children->pluck('_id'))->get();
+        }
+
+        return collect();
+    }
 }
