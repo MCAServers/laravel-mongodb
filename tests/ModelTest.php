@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 use Carbon\Carbon;
@@ -19,6 +20,7 @@ class ModelTest extends TestCase
         Soft::truncate();
         Book::truncate();
         Item::truncate();
+        Guarded::truncate();
     }
 
     public function testNewModel(): void
@@ -409,8 +411,8 @@ class ModelTest extends TestCase
 
         // test created_at
         $item = Item::create(['name' => 'sword']);
-        $this->assertInstanceOf(UTCDateTime::class, $item->getOriginal('created_at'));
-        $this->assertEquals($item->getOriginal('created_at')
+        $this->assertInstanceOf(UTCDateTime::class, $item->getRawOriginal('created_at'));
+        $this->assertEquals($item->getRawOriginal('created_at')
             ->toDateTime()
             ->getTimestamp(), $item->created_at->getTimestamp());
         $this->assertLessThan(2, abs(time() - $item->created_at->getTimestamp()));
@@ -419,7 +421,7 @@ class ModelTest extends TestCase
         /** @var Item $item */
         $item = Item::create(['name' => 'sword']);
         $json = $item->toArray();
-        $this->assertEquals($item->created_at->format('Y-m-d H:i:s'), $json['created_at']);
+        $this->assertEquals($item->created_at->toISOString(), $json['created_at']);
 
         /** @var User $user */
         //Test with create and standard property
@@ -429,10 +431,10 @@ class ModelTest extends TestCase
         $user = User::create(['name' => 'Jane Doe', 'birthday' => Date::now()]);
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
-        $user = User::create(['name' => 'Jane Doe', 'birthday' => 'Monday 8th of August 2005 03:12:46 PM']);
+        $user = User::create(['name' => 'Jane Doe', 'birthday' => 'Monday 8th August 2005 03:12:46 PM']);
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
-        $user = User::create(['name' => 'Jane Doe', 'birthday' => 'Monday 8th of August 1960 03:12:46 PM']);
+        $user = User::create(['name' => 'Jane Doe', 'birthday' => 'Monday 8th August 1960 03:12:46 PM']);
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
         $user = User::create(['name' => 'Jane Doe', 'birthday' => '2005-08-08']);
@@ -466,10 +468,10 @@ class ModelTest extends TestCase
         $user->setAttribute('birthday', Date::now());
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
-        $user->setAttribute('birthday', 'Monday 8th of August 2005 03:12:46 PM');
+        $user->setAttribute('birthday', 'Monday 8th August 2005 03:12:46 PM');
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
-        $user->setAttribute('birthday', 'Monday 8th of August 1960 03:12:46 PM');
+        $user->setAttribute('birthday', 'Monday 8th August 1960 03:12:46 PM');
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
         $user->setAttribute('birthday', '2005-08-08');
@@ -496,6 +498,9 @@ class ModelTest extends TestCase
         $user->setAttribute('birthday', new DateTime('1965-08-08 04.08.37.324'));
         $this->assertInstanceOf(Carbon::class, $user->birthday);
 
+        $user->setAttribute('birthday', new DateTimeImmutable('1965-08-08 04.08.37.324'));
+        $this->assertInstanceOf(Carbon::class, $user->birthday);
+
         //Test with create and array property
         $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => time()]]);
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
@@ -503,10 +508,10 @@ class ModelTest extends TestCase
         $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => Date::now()]]);
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
 
-        $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => 'Monday 8th of August 2005 03:12:46 PM']]);
+        $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => 'Monday 8th August 2005 03:12:46 PM']]);
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
 
-        $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => 'Monday 8th of August 1960 03:12:46 PM']]);
+        $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => 'Monday 8th August 1960 03:12:46 PM']]);
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
 
         $user = User::create(['name' => 'Jane Doe', 'entry' => ['date' => '2005-08-08']]);
@@ -540,10 +545,10 @@ class ModelTest extends TestCase
         $user->setAttribute('entry.date', Date::now());
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
 
-        $user->setAttribute('entry.date', 'Monday 8th of August 2005 03:12:46 PM');
+        $user->setAttribute('entry.date', 'Monday 8th August 2005 03:12:46 PM');
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
 
-        $user->setAttribute('entry.date', 'Monday 8th of August 1960 03:12:46 PM');
+        $user->setAttribute('entry.date', 'Monday 8th August 1960 03:12:46 PM');
         $this->assertInstanceOf(Carbon::class, $user->getAttribute('entry.date'));
 
         $user->setAttribute('entry.date', '2005-08-08');
@@ -721,5 +726,28 @@ class ModelTest extends TestCase
         User::truncate();
 
         $this->assertEquals(0, User::count());
+    }
+
+    public function testGuardedModel()
+    {
+        $model = new Guarded();
+
+        // foobar is properly guarded
+        $model->fill(['foobar' => 'ignored', 'name' => 'John Doe']);
+        $this->assertFalse(isset($model->foobar));
+        $this->assertSame('John Doe', $model->name);
+
+        // foobar is guarded to any level
+        $model->fill(['foobar->level2' => 'v2']);
+        $this->assertNull($model->getAttribute('foobar->level2'));
+
+        // multi level statement also guarded
+        $model->fill(['level1->level2' => 'v1']);
+        $this->assertNull($model->getAttribute('level1->level2'));
+
+        // level1 is still writable
+        $dataValues = ['array', 'of', 'values'];
+        $model->fill(['level1' => $dataValues]);
+        $this->assertEquals($dataValues, $model->getAttribute('level1'));
     }
 }

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 class ValidationTest extends TestCase
@@ -39,6 +40,26 @@ class ValidationTest extends TestCase
         $validator = Validator::make(
             ['name' => 'test doe'],
             ['name' => 'required|unique:users']
+        );
+        $this->assertFalse($validator->fails());
+
+        User::create(['name' => 'Johnny Cash', 'email' => 'johnny.cash+200@gmail.com']);
+
+        $validator = Validator::make(
+            ['email' => 'johnny.cash+200@gmail.com'],
+            ['email' => 'required|unique:users']
+        );
+        $this->assertTrue($validator->fails());
+
+        $validator = Validator::make(
+            ['email' => 'johnny.cash+20@gmail.com'],
+            ['email' => 'required|unique:users']
+        );
+        $this->assertFalse($validator->fails());
+
+        $validator = Validator::make(
+            ['email' => 'johnny.cash+1@gmail.com'],
+            ['email' => 'required|unique:users']
         );
         $this->assertFalse($validator->fails());
     }
