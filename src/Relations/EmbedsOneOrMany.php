@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Jenssegers\Mongodb\Eloquent\Model;
+use Jenssegers\Mongodb\Eloquent\SoftDeletes;
 
 abstract class EmbedsOneOrMany extends Relation
 {
@@ -52,6 +53,14 @@ abstract class EmbedsOneOrMany extends Relation
         }
 
         $this->addConstraints();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getRelationName()
+    {
+        return $this->relation;
     }
 
     /**
@@ -104,7 +113,7 @@ abstract class EmbedsOneOrMany extends Relation
      */
     public function count()
     {
-        return count($this->getEmbedded());
+        return count($this->getEmbedded(true));
     }
 
     /**
@@ -195,13 +204,16 @@ abstract class EmbedsOneOrMany extends Relation
     /**
      * @inheritdoc
      */
-    protected function getEmbedded()
+    protected function getEmbedded($build = false)
     {
         // Get raw attributes to skip relations and accessors.
         $attributes = $this->parent->getAttributes();
 
         // Get embedded models form parent attributes.
         $embedded = isset($attributes[$this->localKey]) ? (array) $attributes[$this->localKey] : null;
+        if($build) {
+            $embedded = $this->buildEmbedded($embedded);
+        }
 
         return $embedded;
     }
@@ -393,5 +405,38 @@ abstract class EmbedsOneOrMany extends Relation
     protected function whereInMethod(EloquentModel $model, $key)
     {
         return 'whereIn';
+    }
+
+    /**
+     * @param $embedded
+     * @return mixed
+     */
+    protected function buildEmbedded($embedded)
+    {
+        if(!empty($embedded)) {
+            if($this->related) {
+                if($this->related->embed) {
+                    $related_uses = class_uses($this->related);
+                    // If this relation is using Jenssegers SoftDeletes trait, remove deleted embeds
+                    if(isset($related_uses[SoftDeletes::class])) {
+                        $loaded_macros = $this->query->getLoadedMacros();
+                        if(!empty($loaded_macros)) {
+                            if(isset($loaded_macros['withTrashed'])) {
+                                return $embedded;
+                            }
+
+                            if(isset($loaded_macros['onlyTrashed'])) {
+                                return collect($embedded)->whereNotNull('deleted_at')->toArray();
+                            }
+                        }
+
+                        // return without trashed by default
+                        return collect($embedded)->whereNull('deleted_at')->toArray();
+                    }
+                }
+            }
+        }
+
+        return $embedded;
     }
 }

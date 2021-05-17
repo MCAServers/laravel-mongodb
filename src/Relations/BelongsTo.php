@@ -3,7 +3,10 @@
 namespace Jenssegers\Mongodb\Relations;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use MongoDB\BSON\Binary;
+use MongoDB\BSON\ObjectId;
 
 class BelongsTo extends \Illuminate\Database\Eloquent\Relations\BelongsTo
 {
@@ -68,5 +71,46 @@ class BelongsTo extends \Illuminate\Database\Eloquent\Relations\BelongsTo
     protected function whereInMethod(EloquentModel $model, $key)
     {
         return 'whereIn';
+    }
+
+    /**
+     * @param array $models
+     * @param Collection $results
+     * @param string $relation
+     * @return array
+     */
+    public function match(array $models, Collection $results, $relation)
+    {
+        $foreign = $this->foreignKey;
+
+        $owner = $this->ownerKey;
+
+        // First we will get to build a dictionary of the child models by their primary
+        // key of the relationship, then we can easily match the children back onto
+        // the parents using that dictionary and the primary key of the children.
+        $dictionary = [];
+
+        foreach ($results as $result) {
+            $owner_attribute = $result->getAttribute($owner);
+            if($owner_attribute instanceof ObjectId || $owner_attribute instanceof Binary)
+                $owner_attribute = (string) $owner_attribute;
+
+            $dictionary[$owner_attribute] = $result;
+        }
+
+        // Once we have the dictionary constructed, we can loop through all the parents
+        // and match back onto their children using these keys of the dictionary and
+        // the primary key of the children to map them onto the correct instances.
+        foreach ($models as $model) {
+            $model_foreign = $model->{$foreign};
+            if($model_foreign instanceof ObjectId || $model_foreign instanceof Binary)
+                $model_foreign = (string) $model_foreign;
+
+            if (isset($dictionary[$model_foreign])) {
+                $model->setRelation($relation, $dictionary[$model_foreign]);
+            }
+        }
+
+        return $models;
     }
 }

@@ -28,7 +28,7 @@ class EmbedsMany extends EmbedsOneOrMany
      */
     public function getResults()
     {
-        return $this->toCollection($this->getEmbedded());
+        return $this->toCollection($this->getEmbedded(true));
     }
 
     /**
@@ -277,7 +277,7 @@ class EmbedsMany extends EmbedsOneOrMany
         $page = $page ?: Paginator::resolveCurrentPage($pageName);
         $perPage = $perPage ?: $this->related->getPerPage();
 
-        $results = $this->getEmbedded();
+        $results = $this->getEmbedded(true);
         $results = $this->toCollection($results);
         $total = $results->count();
         $start = ($page - 1) * $perPage;
@@ -301,9 +301,9 @@ class EmbedsMany extends EmbedsOneOrMany
     /**
      * @inheritdoc
      */
-    protected function getEmbedded()
+    protected function getEmbedded($build = false)
     {
-        return parent::getEmbedded() ?: [];
+        return parent::getEmbedded($build) ?: [];
     }
 
     /**
@@ -339,5 +339,26 @@ class EmbedsMany extends EmbedsOneOrMany
     protected function whereInMethod(EloquentModel $model, $key)
     {
         return 'whereIn';
+    }
+
+    /**
+     * Gets the embedded children in their full models
+     *
+     * @inheritdoc
+     */
+    public function toParents()
+    {
+        $parent_model      = $this->parent;
+        $relationship      = $this->relation;
+        $embedded_children = $parent_model->{$relationship};
+        $first_child       = $embedded_children->first();
+
+        if($first_child && $first_child->parentModel()) {
+            $related_parent_class = get_class($first_child->parentModel()->related);
+
+            return $related_parent_class::whereIn('_id', $embedded_children->pluck('_id'))->get();
+        }
+
+        return collect();
     }
 }

@@ -3,8 +3,11 @@
 namespace Jenssegers\Mongodb\Relations;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\Relations\HasMany as EloquentHasMany;
+use MongoDB\BSON\Binary;
+use MongoDB\BSON\ObjectId;
 
 class HasMany extends EloquentHasMany
 {
@@ -83,5 +86,67 @@ class HasMany extends EloquentHasMany
     protected function whereInMethod(EloquentModel $model, $key)
     {
         return 'whereIn';
+    }
+
+    /**
+     * @param array $dictionary
+     * @param $key
+     * @param $type
+     * @return mixed
+     */
+    public function getRelationValue(array $dictionary, $key, $type)
+    {
+        if($key instanceof ObjectId || $key instanceof Binary)
+            $key = (string) $key;
+
+        return parent::getRelationValue($dictionary, $key, $type);
+    }
+
+    /**
+     * Build model dictionary keyed by the relation's foreign key.
+     *
+     * @param  \Illuminate\Database\Eloquent\Collection  $results
+     * @return array
+     */
+    protected function buildDictionary(Collection $results)
+    {
+        $foreign = $this->getForeignKeyName();
+
+        return $results->mapToDictionary(function ($result) use ($foreign) {
+            $foreign_result = $result->{$foreign};
+            if($foreign_result instanceof ObjectId || $foreign_result instanceof Binary)
+                $foreign_result = (string) $foreign_result;
+
+            return [$foreign_result => $result];
+        })->all();
+    }
+
+    /**
+     * @param array $models
+     * @param Collection $results
+     * @param $relation
+     * @param $type
+     * @return array
+     */
+    public function matchOneOrMany(array $models, Collection $results, $relation, $type)
+    {
+        $dictionary = $this->buildDictionary($results);
+
+        // Once we have the dictionary we can simply spin through the parent models to
+        // link them up with their children using the keyed dictionary to make the
+        // matching very convenient and easy work. Then we'll just return them.
+        foreach ($models as $model) {
+            $key = $model->getAttribute($this->localKey);
+            if($key instanceof ObjectId || $key instanceof Binary)
+                $key = (string) $key;
+
+            if (isset($dictionary[$key])) {
+                $model->setRelation(
+                    $relation, $this->getRelationValue($dictionary, $key, $type)
+                );
+            }
+        }
+
+        return $models;
     }
 }
