@@ -20,7 +20,9 @@ This package adds functionalities to the Eloquent model and Query builder for Mo
   - [Configuration](#configuration)
   - [Eloquent](#eloquent)
     - [Extending the base model](#extending-the-base-model)
+    - [Extending the Authenticable base model](#extending-the-authenticable-base-model)
     - [Soft Deletes](#soft-deletes)
+    - [Guarding attributes](#guarding-attributes)
     - [Dates](#dates)
     - [Basic Usage](#basic-usage)
     - [MongoDB-specific operators](#mongodb-specific-operators)
@@ -43,9 +45,10 @@ This package adds functionalities to the Eloquent model and Query builder for Mo
     - [Authentication](#authentication)
     - [Queues](#queues)
       - [Laravel specific](#laravel-specific)
-      - [Lumen specific](#Lumen-specific)
+      - [Lumen specific](#lumen-specific)
   - [Upgrading](#upgrading)
       - [Upgrading from version 2 to 3](#upgrading-from-version-2-to-3)
+  - [Security contact information](#security-contact-information)
 
 Installation
 ------------
@@ -66,6 +69,8 @@ Make sure you have the MongoDB PHP driver installed. You can find installation i
  5.7.x    | 3.4.x
  5.8.x    | 3.5.x
  6.x      | 3.6.x
+ 7.x      | 3.7.x
+ 8.x      | 3.8.x
 
 Install the package via Composer:
 
@@ -232,6 +237,18 @@ class Book extends Model
 }
 ```
 
+### Extending the Authenticable base model
+This package includes a MongoDB Authenticatable Eloquent class `Jenssegers\Mongodb\Auth\User` that you can use to replace the default Authenticatable class `Illuminate\Foundation\Auth\User` for your `User` model.
+
+```php
+use Jenssegers\Mongodb\Auth\User as Authenticatable;
+
+class User extends Authenticatable
+{
+
+}
+```
+
 ### Soft Deletes
 
 When soft deleting a model, it is not actually removed from your database. Instead, a deleted_at timestamp is set on the record.
@@ -250,6 +267,13 @@ class User extends Model
 ```
 
 For more information check [Laravel Docs about Soft Deleting](http://laravel.com/docs/eloquent#soft-deleting).
+
+### Guarding attributes
+
+When choosing between guarding attributes or marking some as fillable, Taylor Otwell prefers the fillable route.
+This is in light of [recent security issues described here](https://blog.laravel.com/security-release-laravel-61835-7240).
+
+Keep in mind guarding still works, but you may experience unexpected behavior.
 
 ### Dates
 
@@ -333,6 +357,14 @@ $posts = Post::whereBetween('votes', [1, 100])->get();
 ```php
 $users = User::whereNull('age')->get();
 ```
+
+**whereDate**
+
+```php
+$users = User::whereDate('birthday', '2021-5-12')->get();
+```
+The usage is the same as `whereMonth` / `whereDay` / `whereYear` / `whereTime`
+
 
 **Advanced wheres**
 
@@ -576,6 +608,14 @@ These expressions will be injected directly into the query.
 ```php
 User::whereRaw([
     'age' => ['$gt' => 30, '$lt' => 40],
+])->get();
+
+User::whereRaw([
+    '$where' => '/.*123.*/.test(this.field)',
+])->get();
+
+User::whereRaw([
+    '$where' => '/.*123.*/.test(this["hyphenated-field"])',
 ])->get();
 ```
 
