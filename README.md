@@ -30,6 +30,8 @@ This package adds functionalities to the Eloquent model and Query builder for Mo
   - [Relationships](#relationships)
     - [Basic Usage](#basic-usage-1)
     - [belongsToMany and pivots](#belongstomany-and-pivots)
+    - [EmbedsMany Relationship](#embedsmany-relationship)
+    - [EmbedsOne Relationship](#embedsone-relationship)
   - [Query Builder](#query-builder)
     - [Basic Usage](#basic-usage-2)
     - [Available operations](#available-operations)
@@ -40,8 +42,10 @@ This package adds functionalities to the Eloquent model and Query builder for Mo
     - [Cross-Database Relationships](#cross-database-relationships)
     - [Authentication](#authentication)
     - [Queues](#queues)
+      - [Laravel specific](#laravel-specific)
+      - [Lumen specific](#Lumen-specific)
   - [Upgrading](#upgrading)
-      - [Upgrading from version 3 to 4](#upgrading-from-version-3-to-4)
+      - [Upgrading from version 2 to 3](#upgrading-from-version-2-to-3)
 
 Installation
 ------------
@@ -418,7 +422,7 @@ Aggregations can be also used on sub-documents:
 $total = Order::max('suborder.price');
 ```
 
-**NOTE**: This aggregation only works with single sub-documents not arrays.
+**NOTE**: This aggregation only works with single sub-documents (like `EmbedsOne`) not subdocument arrays (like `EmbedsMany`).
 
 **Incrementing/Decrementing the value of a column**
 
@@ -711,6 +715,10 @@ The only available relationships are:
  - belongsTo
  - belongsToMany
 
+The MongoDB-specific relationships are:
+ - embedsOne
+ - embedsMany
+
 Here is a small example:
 
 ```php
@@ -916,6 +924,8 @@ If you want to use MongoDB as your database backend, change the driver in `confi
 'connections' => [
     'database' => [
         'driver' => 'mongodb',
+        // You can also specify your jobs specific database created on config/database.php
+        'connection' => 'mongodb-job',
         'table' => 'jobs',
         'queue' => 'default',
         'expire' => 60,
@@ -927,30 +937,71 @@ If you want to use MongoDB to handle failed jobs, change the database in `config
 
 ```php
 'failed' => [
-    'driver' => env('QUEUE_FAILED_DRIVER', 'database'),
-    'database' => env('DB_CONNECTION', 'mongodb'),
+    'driver' => 'mongodb',
+    // You can also specify your jobs specific database created on config/database.php
+    'database' => 'mongodb-job',
     'table' => 'failed_jobs',
 ],
 ```
 
-Or simply set your own `QUEUE_FAILED_DRIVER` environment variable to `mongodb`
-```env
-QUEUE_FAILED_DRIVER=mongodb
-```
+#### Laravel specific
 
-Last, add the service provider in `config/app.php`:
+Add the service provider in `config/app.php`:
 
 ```php
 Jenssegers\Mongodb\MongodbQueueServiceProvider::class,
 ```
 
+#### Lumen specific
+
+With [Lumen](http://lumen.laravel.com), add the service provider in `bootstrap/app.php`. You must however ensure that you add the following **after** the `MongodbServiceProvider` registration.
+
+```php
+$app->make('queue');
+
+$app->register(Jenssegers\Mongodb\MongodbQueueServiceProvider::class);
+```
+
 Upgrading
 ---------
 
-#### Upgrading from version 3 to 4
+#### Upgrading from version 2 to 3
 
-This new major release contains breaking changes which is listed below:
+In this new major release which supports the new MongoDB PHP extension, we also moved the location of the Model class and replaced the MySQL model class with a trait.
 
-- EmbedsOne and EmbedsMany relations has been removed completely. See explanation [here](https://github.com/jenssegers/laravel-mongodb/issues/1974#issuecomment-592859508)
+Please change all `Jenssegers\Mongodb\Model` references to `Jenssegers\Mongodb\Eloquent\Model` either at the top of your model files or your registered alias.
 
-For any other minor changes, please take a look at our [changelog](CHANGELOG.md)
+```php
+use Jenssegers\Mongodb\Eloquent\Model;
+
+class User extends Model
+{
+    //
+}
+```
+
+If you are using hybrid relations, your MySQL classes should now extend the original Eloquent model class `Illuminate\Database\Eloquent\Model` instead of the removed `Jenssegers\Eloquent\Model`.
+
+Instead use the new `Jenssegers\Mongodb\Eloquent\HybridRelations` trait. This should make things more clear as there is only one single model class in this package.
+
+```php
+use Jenssegers\Mongodb\Eloquent\HybridRelations;
+
+class User extends Model
+{
+
+    use HybridRelations;
+
+    protected $connection = 'mysql';
+}
+```
+
+Embedded relations now return an `Illuminate\Database\Eloquent\Collection` rather than a custom Collection class. If you were using one of the special methods that were available, convert them to Collection operations.
+
+```php
+$books = $user->books()->sortBy('title')->get();
+```
+
+## Security contact information
+
+To report a security vulnerability, follow [these steps](https://tidelift.com/security).
